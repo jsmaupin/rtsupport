@@ -1,9 +1,9 @@
 package main
 
 import (
-	"log"
 	r "github.com/dancannon/gorethink"
 	"github.com/gorilla/websocket"
+	"log"
 )
 
 type FindHandler func(string) (Handler, bool)
@@ -19,8 +19,8 @@ type Client struct {
 	findHandler  FindHandler
 	session      *r.Session
 	stopChannels map[int]chan bool
-	id string
-	userName string
+	id           string
+	userName     string
 }
 
 func (c *Client) NewStopChannel(stopKey int) chan bool {
@@ -86,7 +86,7 @@ func NewClient(socket *websocket.Conn, findHandler FindHandler, session *r.Sessi
 		findHandler:  findHandler,
 		session:      session,
 		stopChannels: make(map[int]chan bool),
-		id: id,
-		userName: user.Name,
+		id:           id,
+		userName:     user.Name,
 	}
 }

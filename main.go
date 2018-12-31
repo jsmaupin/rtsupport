@@ -24,6 +24,13 @@ func main() {
 	if err != nil {
 		log.Panic(err.Error())
 	}
+
+	// Delete all users from the last run
+	err = r.Table("user").Delete().Exec(session)
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
 	router := NewRouter(session)
 
 	router.Handle("channel add", addChannel)
@@ -33,10 +40,10 @@ func main() {
 	router.Handle("user edit", editUser)
 	router.Handle("user subscribe", subscribeUser)
 	router.Handle("user unsubscribe", unsubscribeUser)
-	
 
-	// router.Handle("message add", unsubscribeUser)
-	
+	router.Handle("message add", addMessage)
+	router.Handle("message subscribe", subscribeMessage)
+	router.Handle("message unsubscribe", unsubscribeMessage)
 
 	http.Handle("/", router)
 	http.ListenAndServe(":4000", nil)

@@ -1,8 +1,9 @@
 package main
 
-import (
+import (	
 	r "github.com/dancannon/gorethink"
 	"github.com/mitchellh/mapstructure"
+	"time"
 )
 
 const (
@@ -10,6 +11,14 @@ const (
 	UserStop
 	MessageStop
 )
+
+type ChannelMessage struct {
+	ID        string    `gorethink:"id,omitempty"`
+	ChannelID string    `gorethink:"channelId"`
+	Body      string    `gorethink:"body"`
+	Autor     string    `gorethink:"author"`
+	CreatedAt time.Time `gorethink:"createdAt"`
+}
 
 func addChannel(client *Client, data interface{}) {
 	var channel Channel
@@ -73,7 +82,7 @@ func editUser(client *Client, data interface{}) {
 		return
 	}
 	client.userName = user.Name
-	go func () {
+	go func() {
 		_, err := r.Table("user").Get(client.id).Update(user).RunWrite(client.session)
 		if err != nil {
 			client.send <- Message{"error", err.Error()}
@@ -89,6 +98,7 @@ func subscribeUser(client *Client, data interface{}) {
 		Run(client.session)
 	if err != nil {
 		client.send <- Message{"error", err.Error()}
+		return
 	}
 
 	go func() {
@@ -101,17 +111,17 @@ func subscribeUser(client *Client, data interface{}) {
 	go func() {
 		for {
 			select {
-			case <- stop:
+			case <-stop:
 				cursor.Close()
 				return
-			case change := <- result:
+			case change := <-result:
 				if change.NewValue != nil && change.OldValue == nil {
 					client.send <- Message{"user add", change.NewValue}
 				} else if change.NewValue != nil && change.OldValue != nil {
 					client.send <- Message{"user edit", change.NewValue}
 				} else if change.NewValue == nil && change.OldValue != nil {
 					client.send <- Message{"user remove", change.OldValue}
-				}	
+				}
 			}
 		}
 	}()
@@ -119,4 +129,70 @@ func subscribeUser(client *Client, data interface{}) {
 
 func unsubscribeUser(client *Client, data interface{}) {
 	client.StopForKey(UserStop)
+}
+
+func addMessage(client *Client, data interface{}) {
+	var channelMessage ChannelMessage
+	err := mapstructure.Decode(data, &channelMessage)
+	if err != nil {
+		client.send <- Message{"error", err.Error()}
+		return
+	}
+	channelMessage.CreatedAt = time.Now()
+	channelMessage.Autor = client.userName
+	go func() {
+		_, err := r.Table("message").
+			Insert(channelMessage).
+			RunWrite(client.session)
+		if err != nil {
+			client.send <- Message{"error", err.Error()}
+			return
+		}
+	}()
+}
+
+func subscribeMessage(client *Client, data interface{}) {
+	eventData := data.(map[string]interface{})
+	val, ok := eventData["channelId"]
+	if !ok {
+		return
+	}
+	channelID, ok := val.(string)
+	if !ok {
+		return
+	}
+	stop := client.NewStopChannel(MessageStop)
+	result := make(chan r.ChangeResponse)
+	cursor, err := r.Table("message").
+		OrderBy(r.OrderByOpts{Index: r.Desc("createdAt")}).
+		Filter(r.Row.Field("channelId").Eq(channelID)).
+		Changes(r.ChangesOpts{IncludeInitial: true}).
+		Run(client.session)
+	if err != nil {
+		client.send <- Message{"error", err.Error()}
+		return
+	}
+
+	go func() {
+		var change r.ChangeResponse
+		for cursor.Next(&change) {
+			result <- change
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-stop:
+				cursor.Close()
+				return
+			case change := <-result:
+				client.send <- Message{"message add", change.NewValue}
+			}
+		}
+	}()
+}
+
+func unsubscribeMessage(client *Client, data interface{}) {
+	client.StopForKey(MessageStop)
 }
